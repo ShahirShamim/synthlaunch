@@ -1,5 +1,8 @@
 # 🚀 SynthLaunch
 
+[![CI](https://github.com/ShahirShamim/synthlaunch/actions/workflows/ci.yml/badge.svg)](https://github.com/ShahirShamim/synthlaunch/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Causal inference for launches you can't A/B test.** Upload a panel of a metric
 over time across markets/cohorts, pick the treated unit and the launch date, and
 SynthLaunch builds a **synthetic control** — a weighted blend of untreated "donor"
@@ -13,6 +16,8 @@ FastAPI serves the built frontend so the whole thing still runs from one process
 one URL. The AI memo works **offline** (deterministic template) and upgrades to Claude
 prose when you add an API key. Every chart has a plain-language **“How to read this”**
 explainer, so it's usable by a non-technical audience.
+
+![SynthLaunch dashboard — California Prop 99 analysis](docs/screenshot.png)
 
 ---
 
