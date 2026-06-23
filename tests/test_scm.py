@@ -95,6 +95,20 @@ def test_effect_intervals_structure_and_significance():
     assert sci["att_high"] < 0
 
 
+def test_marketing_geolift_positive_and_powered():
+    """The geo-lift demo has a known +20% lift (~14.6k ATT/week). The engine should
+    recover a clearly positive, significant, well-powered effect."""
+    wide = _wide("marketing_geolift")
+    fit = scm.synthetic_control(wide, "Manchester", "2025-01-13")
+    placebo = scm.placebo_in_space(wide, "Manchester", "2025-01-13")
+    ci = scm.effect_intervals(fit, placebo)
+    power = scm.power_mde(fit, ci["se_att"])
+    assert fit.att > 5000                     # strong positive lift (~14.6k)
+    assert ci["att_low"] > 0                  # 95% CI excludes 0
+    assert power["powered"] is True
+    assert scm.compute_confidence(fit, placebo)["confidence"] in {"high", "medium"}
+
+
 def test_power_mde_math_and_flag():
     wide = _wide("prop99_california")
     fit = scm.synthetic_control(wide, "California", "1989-01-01")

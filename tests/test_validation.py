@@ -5,7 +5,7 @@ from synthlaunch import datasets, validation
 
 
 def test_bundled_datasets_pass():
-    for ds_id in ("prop99_california", "brexit_uk", "synthetic_marketplace"):
+    for ds_id in ("prop99_california", "brexit_uk", "synthetic_marketplace", "marketing_geolift"):
         rep = validation.validate(datasets.get_dataframe(ds_id))
         assert rep.ok, rep.errors
 

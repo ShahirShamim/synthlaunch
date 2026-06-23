@@ -15,6 +15,7 @@ import json
 import math
 import random
 import urllib.request
+from datetime import date, timedelta
 from pathlib import Path
 
 OUT = Path(__file__).resolve().parent.parent / "backend" / "data"
@@ -120,6 +121,42 @@ def build_synthetic():
     print(f"synthetic_marketplace.csv: {len(rows)} rows, true ATT = {sum(post_eff)/len(post_eff):.3f}")
 
 
+def build_marketing():
+    """Geo-lift marketing campaign with a KNOWN POSITIVE effect: a paid campaign
+    runs in one city (Manchester) while other UK cities are the holdout. Weekly
+    revenue, +20% injected lift — so the ROI/iROAS card shows a winning campaign."""
+    random.seed(7)
+    donors = ["Birmingham", "Leeds", "Glasgow", "Liverpool", "Bristol", "Sheffield",
+              "Edinburgh", "Cardiff", "Newcastle", "Nottingham", "Leicester"]
+    n_pre, n_post = 54, 18
+    weeks = [(date(2024, 1, 1) + timedelta(weeks=i)).isoformat() for i in range(n_pre + n_post)]
+    interv = weeks[n_pre]
+    lift = 0.20
+
+    # shared growth + annual seasonality
+    factor = [1 + 0.004 * i + 0.06 * math.sin(2 * math.pi * i / 52) for i in range(len(weeks))]
+    levels = {d: random.uniform(50_000, 70_000) for d in donors}
+    series = {d: [round(levels[d] * factor[i] + random.gauss(0, 1200), 2) for i in range(len(weeks))]
+              for d in donors}
+    combo = {"Birmingham": 0.4, "Leeds": 0.35, "Bristol": 0.25}
+    cf = [sum(w * series[d][i] for d, w in combo.items()) + random.gauss(0, 900) for i in range(len(weeks))]
+
+    treated, post_eff = [], []
+    for i, wk in enumerate(weeks):
+        if wk >= interv:
+            treated.append(round(cf[i] * (1 + lift), 2))
+            post_eff.append(cf[i] * lift)
+        else:
+            treated.append(round(cf[i], 2))
+    rows = [{"date": weeks[i], "unit_id": d, "metric": series[d][i]}
+            for d in donors for i in range(len(weeks))]
+    rows += [{"date": weeks[i], "unit_id": "Manchester", "metric": treated[i]} for i in range(len(weeks))]
+    rows.sort(key=lambda x: (x["unit_id"], x["date"]))
+    _write("marketing_geolift.csv", rows)
+    print(f"marketing_geolift.csv: {len(rows)} rows, intervention {interv}, "
+          f"true ATT = {sum(post_eff)/len(post_eff):.0f}, total incremental = {sum(post_eff):.0f}")
+
+
 def _write(name, rows):
     OUT.mkdir(parents=True, exist_ok=True)
     with open(OUT / name, "w", newline="") as f:
@@ -132,4 +169,5 @@ if __name__ == "__main__":
     build_prop99()
     build_brexit()
     build_synthetic()
+    build_marketing()
     print("done ->", OUT)

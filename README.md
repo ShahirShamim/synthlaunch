@@ -83,6 +83,10 @@ The Vite dev server proxies `/api` to port 8000.
 - **B2B marketplace pricing (SYNTHETIC)** — generated panel with a **known injected
   −8% effect** (true ATT ≈ −9.54). The engine recovers ATT ≈ **−9.98** and puts the
   weight back on the true donors — a built-in ground-truth check.
+- **Paid campaign — geo lift (SYNTHETIC, winning campaign)** — a marketing geo test:
+  a paid campaign runs in **Manchester** while 11 other UK cities are the holdout.
+  Weekly revenue, **known +20% lift** (~£264k incremental). Best dataset for the
+  **ROI / iROAS** card — recovers ≈ **+21%**, iROAS ≈ **3×** at £100k spend, *Well powered*.
 
 Rebuild them any time: `./.venv/bin/python scripts/build_data.py`.
 
