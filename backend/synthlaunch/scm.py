@@ -22,6 +22,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from scipy.stats import norm
 
 _EPS = 1e-12
 
@@ -250,3 +251,84 @@ def compute_confidence(fit: FitResult, placebo: dict) -> dict:
 
     return {"confidence": label, "p_value": p, "n_donors": n_donors,
             "n_pre": n_pre, "reasons": reasons}
+
+
+def effect_intervals(fit: FitResult, placebo: dict, z: float = 1.96) -> dict:
+    """Placebo-based uncertainty for the effect.
+
+    The spread of the donor placebo gaps *is* the reference distribution for "no
+    effect", so we use it to put a (1−α) interval around the estimate:
+      * per-period and cumulative bands from the placebo gap spread at each date;
+      * an ATT interval from the standard deviation of the placebo ATTs.
+    No parametric noise assumption beyond the placebo cross-section.
+    """
+    dates = fit.dates
+    pre = np.array([d < fit.intervention_date for d in dates])
+    post = ~pre
+    donor = np.array([g for u, g in placebo["paths"].items() if u != fit.treated_unit], dtype=float)
+    gap = np.array(fit.gaps)
+    cum = np.cumsum(gap)
+
+    # Drop placebos whose pre-period fit is far worse than the treated unit's — a bad
+    # fit produces a large gap everywhere, which is not the noise we want to measure.
+    if donor.shape[0] >= 2:
+        donor_pre_mspe = (donor[:, pre] ** 2).mean(axis=1)
+        keep = donor_pre_mspe <= placebo.get("prune_mult", 20.0) * fit.pre_mspe
+        if keep.sum() >= 2:
+            donor = donor[keep]
+    n = donor.shape[0]
+
+    if n < 2:
+        zeros = [0.0] * len(dates)
+        return {"available": False, "z": z, "se_att": float("nan"),
+                "att": fit.att, "att_low": fit.att, "att_high": fit.att,
+                "pct": fit.pct_lift, "pct_low": fit.pct_lift, "pct_high": fit.pct_lift,
+                "gap_low": list(gap), "gap_high": list(gap),
+                "cum_low": list(cum), "cum_high": list(cum), "_z0": zeros}
+
+    std_t = donor.std(axis=0, ddof=1)
+    cum_std_t = np.cumsum(donor, axis=1).std(axis=0, ddof=1)
+    se_att = float(donor[:, post].mean(axis=1).std(ddof=1))
+    synth_post = float(np.mean(np.array(fit.synthetic)[post]))
+
+    def pct(x: float) -> float:
+        return float(x / synth_post * 100.0) if abs(synth_post) > _EPS else float("nan")
+
+    return {
+        "available": True, "z": z, "se_att": se_att,
+        "att": fit.att, "att_low": fit.att - z * se_att, "att_high": fit.att + z * se_att,
+        "pct": fit.pct_lift, "pct_low": pct(fit.att - z * se_att), "pct_high": pct(fit.att + z * se_att),
+        "gap_low": [float(v) for v in gap - z * std_t],
+        "gap_high": [float(v) for v in gap + z * std_t],
+        "cum_low": [float(v) for v in cum - z * cum_std_t],
+        "cum_high": [float(v) for v in cum + z * cum_std_t],
+    }
+
+
+def power_mde(fit: FitResult, se_att: float, alpha: float = 0.05,
+              powers: tuple[float, ...] = (0.8, 0.9)) -> dict:
+    """Minimum Detectable Effect for a test of this shape (length × donor pool).
+
+    Treats the placebo ATT spread as the sampling noise of the estimator. For a
+    one-sided test at `alpha` and a target `power`,
+        MDE = (z_alpha + z_power) · se_att.
+    Lets a user ask, before spending, "could this geo test even detect a 5% lift?"
+    """
+    post = np.array([d >= fit.intervention_date for d in fit.dates])
+    base = abs(float(np.mean(np.array(fit.synthetic)[post])))
+    if not np.isfinite(se_att):
+        return {"available": False, "reason": "need >=2 donors to estimate noise"}
+
+    z_a = float(norm.ppf(1 - alpha))
+    items = []
+    for p in powers:
+        mde = (z_a + float(norm.ppf(p))) * se_att
+        items.append({"power": p, "mde_abs": mde,
+                      "mde_pct": float(mde / base * 100.0) if base > _EPS else float("nan")})
+    return {
+        "available": True, "alpha": alpha, "se_att": se_att,
+        "n_post": fit.n_post, "n_donors": fit.n_donors,
+        "observed_abs": abs(fit.att), "observed_pct": abs(fit.pct_lift),
+        "items": items,
+        "powered": bool(abs(fit.att) >= items[0]["mde_abs"]),
+    }

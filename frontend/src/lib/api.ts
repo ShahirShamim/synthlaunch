@@ -73,6 +73,29 @@ export interface PlaceboInTime {
   att?: number
 }
 
+export interface Intervals {
+  available: boolean
+  z: number
+  se_att: number
+  att: number; att_low: number; att_high: number
+  pct: number; pct_low: number; pct_high: number
+  gap_low: number[]; gap_high: number[]
+  cum_low: number[]; cum_high: number[]
+}
+
+export interface PowerItem { power: number; mde_abs: number; mde_pct: number }
+export interface Power {
+  available: boolean
+  alpha?: number
+  n_post?: number
+  n_donors?: number
+  observed_abs?: number
+  observed_pct?: number
+  items?: PowerItem[]
+  powered?: boolean
+  reason?: string
+}
+
 export interface Confidence {
   confidence: "high" | "medium" | "low" | "insufficient"
   p_value: number
@@ -118,6 +141,7 @@ export const analyze = (p: RunParams) =>
   post<{
     fit: FitResult; did: DidResult; in_space: PlaceboInSpace
     in_time: PlaceboInTime; confidence: Confidence
+    intervals: Intervals; power: Power
   }>("/api/analyze", p)
 
 export const placebo = (p: RunParams) =>

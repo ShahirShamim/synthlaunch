@@ -41,8 +41,17 @@ _SYSTEM = (
 )
 
 
-def _context(meta, fit, did_res, placebo, confidence) -> dict:
+def _context(meta, fit, did_res, placebo, confidence, intervals=None) -> dict:
+    ci = {}
+    if intervals and intervals.get("available"):
+        ci = {
+            "att_ci_low": round(intervals["att_low"], 4),
+            "att_ci_high": round(intervals["att_high"], 4),
+            "pct_ci_low": round(intervals["pct_low"], 3),
+            "pct_ci_high": round(intervals["pct_high"], 3),
+        }
     return {
+        **ci,
         "treated_unit": fit["treated_unit"],
         "intervention_date": fit["intervention_date"],
         "metric_label": meta.get("metric_label", "metric"),
@@ -73,10 +82,14 @@ def _template_memo(ctx: dict) -> dict:
         "low": "NOT reliably distinguishable from placebo noise",
         "insufficient": "NOT interpretable — the data does not support inference",
     }[ctx["confidence"]]
+    ci_txt = ""
+    if "att_ci_low" in ctx:
+        ci_txt = (f" The placebo-based 95% interval runs from {ctx['att_ci_low']:.2f} to "
+                  f"{ctx['att_ci_high']:.2f} ({ctx['pct_ci_low']:.1f}% to {ctx['pct_ci_high']:.1f}%).")
     summary = (
         f"After the intervention on **{ctx['intervention_date']}**, {ctx['treated_unit']}'s "
         f"{ctx['metric_label']} shows an estimated average treatment effect (ATT) of "
-        f"**{ctx['att']:.2f}** ({ctx['pct_lift']:.1f}% {direction}) versus its synthetic control.\n\n"
+        f"**{ctx['att']:.2f}** ({ctx['pct_lift']:.1f}% {direction}) versus its synthetic control.{ci_txt}\n\n"
         f"The synthetic control is built mainly from {donors}. Pre-treatment fit "
         f"(MSPE = {ctx['pre_mspe']:.3f}) and a placebo permutation test give an empirical "
         f"**p-value = {ctx['p_value']:.3f}** ({ctx['n_donors']} donors, {ctx['n_pre']} pre-periods). "
@@ -101,9 +114,9 @@ def _template_memo(ctx: dict) -> dict:
     }
 
 
-def build_memo(meta, fit, did_res, placebo, confidence, api_key: str | None = None,
-               model: str | None = None) -> dict:
-    ctx = _context(meta, fit, did_res, placebo, confidence)
+def build_memo(meta, fit, did_res, placebo, confidence, intervals=None,
+               api_key: str | None = None, model: str | None = None) -> dict:
+    ctx = _context(meta, fit, did_res, placebo, confidence, intervals)
     key = api_key or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         return _template_memo(ctx)

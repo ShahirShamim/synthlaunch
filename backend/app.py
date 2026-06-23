@@ -114,8 +114,11 @@ def api_analyze(req: FitRequest):
     in_space = scm.placebo_in_space(wide, req.treated_unit, req.intervention_date)
     in_time = scm.placebo_in_time(wide, req.treated_unit, req.intervention_date)
     confidence = scm.compute_confidence(fit, in_space)
+    intervals = scm.effect_intervals(fit, in_space)
+    power = scm.power_mde(fit, intervals["se_att"])
     return {"fit": fit.to_dict(), "did": did_res, "in_space": in_space,
-            "in_time": in_time, "confidence": confidence}
+            "in_time": in_time, "confidence": confidence,
+            "intervals": intervals, "power": power}
 
 
 @app.post("/api/memo")
@@ -126,9 +129,10 @@ def api_memo(req: MemoRequest):
     did_res = scm.did(wide, req.treated_unit, req.intervention_date)
     placebo = scm.placebo_in_space(wide, req.treated_unit, req.intervention_date)
     confidence = scm.compute_confidence(fit, placebo)
+    intervals = scm.effect_intervals(fit, placebo)
     meta = datasets.get_meta(req.dataset_id)
     result = memo.build_memo(meta, fit.to_dict(), did_res, placebo, confidence,
-                             api_key=req.api_key, model=req.model)
+                             intervals=intervals, api_key=req.api_key, model=req.model)
     return {"memo": result, "confidence": confidence}
 
 

@@ -78,6 +78,35 @@ def test_in_time_placebo_small_before_treatment():
     assert abs(res["att"]) < abs(fit.att)
 
 
+def test_effect_intervals_structure_and_significance():
+    # structural checks on the real (heavy-tailed) Prop 99 placebo distribution
+    wide = _wide("prop99_california")
+    fit = scm.synthetic_control(wide, "California", "1989-01-01")
+    ci = scm.effect_intervals(fit, scm.placebo_in_space(wide, "California", "1989-01-01"))
+    assert ci["available"]
+    assert ci["att_low"] < fit.att < ci["att_high"]      # CI brackets the point estimate
+    assert ci["se_att"] > 0
+    assert len(ci["cum_low"]) == len(fit.dates) == len(ci["gap_high"])
+
+    # on the clean synthetic panel the effect is significant: 95% CI excludes 0
+    sw = _wide("synthetic_marketplace")
+    sf = scm.synthetic_control(sw, "London", "2025-01-01")
+    sci = scm.effect_intervals(sf, scm.placebo_in_space(sw, "London", "2025-01-01"))
+    assert sci["att_high"] < 0
+
+
+def test_power_mde_math_and_flag():
+    wide = _wide("prop99_california")
+    fit = scm.synthetic_control(wide, "California", "1989-01-01")
+    ci = scm.effect_intervals(fit, scm.placebo_in_space(wide, "California", "1989-01-01"))
+    power = scm.power_mde(fit, ci["se_att"])
+    assert power["available"]
+    assert power["items"][0]["mde_abs"] > 0
+    assert power["items"][1]["mde_abs"] > power["items"][0]["mde_abs"]  # 90% needs bigger effect
+    # the flag is consistent with the MDE it reports
+    assert power["powered"] == (abs(fit.att) >= power["items"][0]["mde_abs"])
+
+
 def test_did_runs_and_reports_parallel_trends():
     wide = _wide("prop99_california")
     res = scm.did(wide, "California", "1989-01-01")

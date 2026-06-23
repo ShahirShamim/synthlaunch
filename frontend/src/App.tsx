@@ -21,9 +21,10 @@ import { HowToRead } from "@/components/HowToRead"
 import type { Explainer } from "@/components/HowToRead"
 import * as api from "@/lib/api"
 import type {
-  Confidence, DatasetMeta, DidResult, FitResult, Memo,
-  PlaceboInSpace, PlaceboInTime,
+  Confidence, DatasetMeta, DidResult, FitResult, Intervals, Memo,
+  PlaceboInSpace, PlaceboInTime, Power,
 } from "@/lib/api"
+import { computeRoi } from "@/lib/roi"
 
 const ROSE = "#f43f5e"
 const INDIGO = "#818cf8"
@@ -68,6 +69,20 @@ function Md({ text }: { text: string }) {
         }
         return <p key={i}>{bold(b)}</p>
       })}
+    </div>
+  )
+}
+
+function fmt(x: number, d = 2) {
+  return Number.isFinite(x) ? x.toLocaleString(undefined, { maximumFractionDigits: d }) : "—"
+}
+
+function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-lg border bg-card/50 px-3 py-2">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+      {sub && <div className="text-[11px] text-muted-foreground tabular-nums">{sub}</div>}
     </div>
   )
 }
@@ -122,6 +137,12 @@ export default function App() {
   const [inSpace, setInSpace] = useState<PlaceboInSpace | null>(null)
   const [inTime, setInTime] = useState<PlaceboInTime | null>(null)
   const [conf, setConf] = useState<Confidence | null>(null)
+  const [intervals, setIntervals] = useState<Intervals | null>(null)
+  const [power, setPower] = useState<Power | null>(null)
+
+  const [spend, setSpend] = useState("100000")
+  const [valuePerUnit, setValuePerUnit] = useState("1")
+  const [marginPct, setMarginPct] = useState("100")
 
   const [apiKey, setApiKey] = useState("")
   const [model, setModel] = useState("")
@@ -131,6 +152,7 @@ export default function App() {
   async function selectDataset(id: string, list = datasets) {
     setDsId(id)
     setFit(null); setInSpace(null); setMemo(null); setConf(null)
+    setIntervals(null); setPower(null)
     const m = list.find((x) => x.id === id) ?? null
     setMeta(m)
     const detail = await api.getDataset(id)
@@ -161,10 +183,12 @@ export default function App() {
       if (explore) {
         const { fit: f, did: d } = await api.fit(params)
         setFit(f); setDid(d); setInSpace(null); setConf(null); setMemo(null)
+        setIntervals(null); setPower(null)
       } else {
         const a = await api.analyze(params)
         setFit(a.fit); setDid(a.did); setInSpace(a.in_space)
         setInTime(a.in_time); setConf(a.confidence); setMemo(null)
+        setIntervals(a.intervals); setPower(a.power)
       }
     } catch (e) {
       toast.error("Analysis failed: " + (e as Error).message)
@@ -221,6 +245,17 @@ export default function App() {
       + `${att.toLocaleString(undefined, { maximumFractionDigits: 2 })} (${pct.toFixed(1)}%) ${dir} `
       + `than the synthetic estimate of what would have happened without the change.${sig}`
   }, [fit, conf, inSpace, explore, metricLabel])
+
+  const roi = useMemo(() => {
+    if (!fit || !intervals) return null
+    const last = fit.cumulative_gaps.length - 1
+    const cum = fit.cumulative_gaps[last]
+    const lo = intervals.available ? intervals.cum_low[last] : cum
+    const hi = intervals.available ? intervals.cum_high[last] : cum
+    return computeRoi(cum, lo, hi, {
+      spend: +spend || 0, valuePerUnit: +valuePerUnit || 0, marginPct: +marginPct || 0,
+    })
+  }, [fit, intervals, spend, valuePerUnit, marginPct])
 
   return (
     <TooltipProvider delay={150}>
@@ -364,12 +399,92 @@ export default function App() {
                         hint="A simpler Difference-in-Differences estimate, shown for comparison. It should be in the same ballpark." />
                     )}
                   </div>
+                  {intervals?.available && !explore && (
+                    <p className="text-xs text-muted-foreground">
+                      <b className="text-foreground">95% interval</b> (placebo-based): ATT{" "}
+                      {fmt(intervals.att_low)} to {fmt(intervals.att_high)} ·{" "}
+                      {fmt(intervals.pct_low, 1)}% to {fmt(intervals.pct_high, 1)}%
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                     <span>Pre-launch fit (MSPE): <b className="text-foreground">{fit.pre_mspe.toFixed(3)}</b> — lower means the twin tracked well before launch.</span>
                     <span>{fit.n_donors} donor units · {fit.n_pre} pre-periods</span>
                   </div>
                 </CardContent>
               </Card>
+            )}
+
+            {/* ROI + power planner */}
+            {!explore && fit && intervals?.available && roi && (
+              <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">💷 Campaign ROI / incrementality</CardTitle>
+                    <CardDescription>Turn the causal effect into money — enter your campaign economics.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Spend</Label>
+                        <Input inputMode="decimal" value={spend} onChange={(e) => setSpend(e.target.value)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Revenue / unit</Label>
+                        <Input inputMode="decimal" value={valuePerUnit} onChange={(e) => setValuePerUnit(e.target.value)} />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Margin %</Label>
+                        <Input inputMode="decimal" value={marginPct} onChange={(e) => setMarginPct(e.target.value)} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Metric label="iROAS" value={`${fmt(roi.iroas)}×`} sub={`95% CI ${fmt(roi.iroasLow)}–${fmt(roi.iroasHigh)}`} />
+                      <Metric label="Net profit" value={fmt(roi.netProfit, 0)} sub={`CI ${fmt(roi.netLow, 0)} to ${fmt(roi.netHigh, 0)}`} />
+                      <Metric label="Incremental units" value={fmt(roi.units, 0)} sub={`CI ${fmt(roi.unitsLow, 0)} to ${fmt(roi.unitsHigh, 0)}`} />
+                      <Metric label="Cost / incremental" value={fmt(roi.costPerUnit)} sub={`ROI ${fmt(roi.roiPct, 0)}%`} />
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      iROAS = incremental revenue ÷ spend. Incremental units = total causal effect over the post-period
+                      (with its 95% interval carried through). Set revenue/unit = 1 if your metric is already revenue.
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <CardTitle className="text-base">🎯 Was this test powered?</CardTitle>
+                      {power?.available && (
+                        <Badge variant="outline" className={power.powered
+                          ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                          : "bg-amber-500/15 text-amber-400 border-amber-500/30"}>
+                          {power.powered ? "Well powered" : "Underpowered"}
+                        </Badge>
+                      )}
+                    </div>
+                    <CardDescription>Smallest effect this design could reliably detect (MDE).</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    {power?.available && power.items ? (
+                      <>
+                        <p>Observed effect <b>{fmt(power.observed_pct ?? 0, 1)}%</b>. To detect reliably you'd need at least:</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {power.items.map((it) => (
+                            <Metric key={it.power} label={`MDE @ ${Math.round(it.power * 100)}% power`}
+                              value={`${fmt(it.mde_pct, 1)}%`} sub={`±${fmt(it.mde_abs)} ${metricLabel.split(" ")[0]}`} />
+                          ))}
+                        </div>
+                        <p className="text-[11px] text-muted-foreground">
+                          {power.n_post} post-periods · {power.n_donors} donors. From the spread of placebo effects
+                          (one-sided α = 0.05). Use it <i>before</i> a launch to size a geo test.
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-muted-foreground">Need ≥ 5 donors to estimate power reliably.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             )}
 
             {/* 1 · main comparison */}
@@ -399,12 +514,18 @@ export default function App() {
                   title="2 · Total effect over time"
                   desc="Running sum of the gap (treated − synthetic)."
                   explainer={{
-                    what: "Each point adds up the gap so far — the cumulative effect since the start.",
-                    read: "It should hug zero before the launch. After launch it slopes away from zero; the final value is the total accumulated effect.",
+                    what: "Each point adds up the gap so far — the cumulative effect since the start. The shaded band is the placebo-based 95% range.",
+                    read: "It should hug zero before the launch. After launch it slopes away from zero; the final value is the total accumulated effect. If the shaded band stays clear of zero, the cumulative effect is unlikely to be noise.",
                     tells: `The net cumulative impact on ${metricLabel} — e.g. total units gained or lost.`,
                   }}>
                   <Chart
-                    data={[{ x: fit.dates, y: fit.cumulative_gaps, fill: "tozeroy", mode: "lines", line: { color: EMERALD }, name: "cumulative" }]}
+                    data={[
+                      ...(intervals?.available ? [
+                        { x: fit.dates, y: intervals.cum_high, mode: "lines", line: { width: 0 }, showlegend: false, hoverinfo: "skip", name: "hi" },
+                        { x: fit.dates, y: intervals.cum_low, mode: "lines", line: { width: 0 }, fill: "tonexty", fillcolor: "rgba(52,211,153,0.15)", showlegend: false, hoverinfo: "skip", name: "95% CI" },
+                      ] : []),
+                      { x: fit.dates, y: fit.cumulative_gaps, fill: intervals?.available ? "none" : "tozeroy", mode: "lines", line: { color: EMERALD }, name: "cumulative" },
+                    ]}
                     layout={vline(fit.intervention_date)} height={300}
                   />
                 </ChartCard>

@@ -63,7 +63,10 @@ The Vite dev server proxies `/api` to port 8000.
 | Donor weights donut | which donor units compose the synthetic control |
 | Placebo spaghetti + p-value | each unit treated as a fake "treated" → empirical significance |
 | Validity gates | ATT, % lift, empirical p, pre-fit MSPE, confidence label |
-| AI Causal Memo | plain-language summary that **respects** the confidence label |
+| **95% confidence intervals** | placebo-based range on the effect (point estimates alone lie) + shaded band on the cumulative chart |
+| **Campaign ROI / iROAS** | turn the causal effect into money: iROAS, net profit, cost-per-incremental, with the CI carried through |
+| **Power / MDE planner** | the smallest effect this design could reliably detect — size a geo test *before* you spend |
+| AI Causal Memo | plain-language summary that **respects** the confidence label, now incl. the 95% interval |
 
 ## Bundled datasets
 
